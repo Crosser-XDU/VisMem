@@ -29,6 +29,12 @@ class QueryBuilder(nn.Module):
     def forward(self, H: torch.Tensor, H_key_padding_mask: torch.BoolTensor | None = None) -> torch.Tensor:
 
         B, L, D = H.shape
+        max_h_len = self.pos_emb.size(1) - self.query_len
+        if L > max_h_len:
+            H = H[:, -max_h_len:, :]
+            if H_key_padding_mask is not None:
+                H_key_padding_mask = H_key_padding_mask[:, -max_h_len:]
+            L = H.size(1)
         q = self.q_init.unsqueeze(0).expand(B, -1, -1)  # (B,K,D)
         x = torch.cat([H, q], dim=1)  # (B, L+K, D)
         if x.size(1) > self.pos_emb.size(1):

@@ -37,11 +37,20 @@ pip install -r requirements.txt
 
 
 ### (2) Training
-Recommended GPU: >= 8 NVIDIA H200 141G GPUs.
+Recommended GPU in the original release: >= 8 NVIDIA H200 141G GPUs.
+For 8 x 80GB GPUs, see [RUN_8GPU.md](RUN_8GPU.md). The repaired training entrypoints use Accelerate data parallelism and place one full Qwen2.5-VL-7B replica on each GPU.
 #### Stage I
 ```bash
 python -m main.cli.train_stage1 \
   --model_name_or_path Qwen/Qwen2.5-VL-7B-Instruct \
+  --train_jsonl /path/to/train.jsonl \
+  --output_dir outputs/stage1 \
+  --epochs 1
+```
+For 8 GPUs:
+```bash
+accelerate launch --num_processes 8 -m main.cli.train_stage1 \
+  --config configs/vismem_qwen25vl7b.yaml \
   --train_jsonl /path/to/train.jsonl \
   --output_dir outputs/stage1 \
   --epochs 1
@@ -56,6 +65,17 @@ python -m main.cli.train_stage2 \
   --output_dir outputs/stage2 \
   --epochs 1
 ```
+For 8 GPUs:
+```bash
+accelerate launch --num_processes 8 -m main.cli.train_stage2 \
+  --config configs/vismem_qwen25vl7b.yaml \
+  --train_jsonl /path/to/train.jsonl \
+  --init_from outputs/stage1/epoch0 \
+  --output_dir outputs/stage2 \
+  --epochs 1
+```
+
+See [REPRODUCTION_NOTES.md](REPRODUCTION_NOTES.md) before comparing numbers to the paper. The public repository is not a complete one-to-one implementation of the paper appendix.
 
 
 ### (3) Evaluation

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Tuple, Any, Dict
+from typing import Tuple, Any, Dict, List, Optional
 from main.constants import ALL_SPECIAL_TOKENS
 import torch
 
@@ -45,9 +45,12 @@ def init_token_embeddings(model, tokenizer, init_from_token: str | None = None, 
 def load_qwen25vl(model_name_or_path: str, torch_dtype=None, device_map="auto", trust_remote_code=True):
     from transformers import AutoTokenizer, AutoProcessor
     try:
-        from transformers import AutoModelForVision2Seq as AutoModelClass
+        from transformers import Qwen2_5_VLForConditionalGeneration as AutoModelClass
     except Exception:
-        from transformers import AutoModelForCausalLM as AutoModelClass
+        try:
+            from transformers import AutoModelForVision2Seq as AutoModelClass
+        except Exception:
+            from transformers import AutoModelForCausalLM as AutoModelClass
 
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, trust_remote_code=trust_remote_code)
     processor = AutoProcessor.from_pretrained(model_name_or_path, trust_remote_code=trust_remote_code)
@@ -63,8 +66,36 @@ def load_qwen25vl(model_name_or_path: str, torch_dtype=None, device_map="auto", 
     # resize embeddings after adding tokens
     if hasattr(model, "resize_token_embeddings"):
         model.resize_token_embeddings(len(tokenizer))
+    if hasattr(processor, "tokenizer"):
+        processor.tokenizer = tokenizer
 
     if len(tokenizer) > old_vocab:
         init_token_embeddings(model, tokenizer, init_from_token=None, noise_std=1e-3)
 
     return model, tokenizer, processor
+
+
+def _has_image_token(prompt: str) -> bool:
+    return "<|vision_start|>" in prompt or "<image>" in prompt or "<|image_pad|>" in prompt
+
+
+def prepare_qwen_vl_inputs(processor, prompts: List[str], images: Optional[List[Any]], **kwargs):
+    use_template = images is not None and any(img is not None for img in images)
+    texts = prompts
+    if use_template and hasattr(processor, "apply_chat_template"):
+        texts = []
+        for prompt, image in zip(prompts, images):
+            if image is not None and not _has_image_token(prompt):
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image"},
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ]
+                prompt = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            texts.append(prompt)
+    image_inputs = images if use_template else None
+    return processor(text=texts, images=image_inputs, return_tensors="pt", padding=True, **kwargs)

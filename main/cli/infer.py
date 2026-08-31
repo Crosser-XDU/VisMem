@@ -15,6 +15,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/vismem_qwen25vl7b.yaml")
     ap.add_argument("--model_name_or_path", default=None)
+    ap.add_argument("--ckpt", default=None, help="folder with main.pt")
     ap.add_argument("--image", default=None)
     ap.add_argument("--prompt", required=True)
     ap.add_argument("--max_new_tokens", type=int, default=256)
@@ -35,6 +36,10 @@ def main():
 
     base_model, tokenizer, processor = load_qwen25vl(model_name, torch_dtype=dtype, device_map=device_map, trust_remote_code=trust)
     vismem = VisMemModel(base_model, tokenizer, processor, viscfg)
+    if args.ckpt is not None:
+        import os
+        state = torch.load(os.path.join(args.ckpt, "main.pt"), map_location="cpu")
+        vismem.load_state_dict(state["vismem_state"], strict=False)
     vismem.eval()
 
     img = Image.open(args.image).convert("RGB") if args.image else None

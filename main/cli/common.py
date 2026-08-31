@@ -11,7 +11,7 @@ def load_yaml(path: str) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 def build_vismem_config(cfg_dict: Dict[str, Any]) -> VisMemConfig:
-    v = cfg_dict.get("main", {})
+    v = cfg_dict.get("vismem", {})
     qb = v.get("query_builder", {})
     lora = v.get("lora", {})
     cfg = VisMemConfig(

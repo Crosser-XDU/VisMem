@@ -1,22 +1,41 @@
 from __future__ import annotations
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import torch
 import torch.nn.functional as F
 
-def stage1_loss(base_model, vismem_model, inputs: Dict[str, Any], target_text: str):
+def _as_list(target_text):
+    if isinstance(target_text, str):
+        return [target_text]
+    return list(target_text)
+
+
+def _copy_multimodal_inputs(inputs: Dict[str, Any], input_ids, attention_mask):
+    out = {"input_ids": input_ids, "attention_mask": attention_mask}
+    for key, value in inputs.items():
+        if key not in ("input_ids", "attention_mask"):
+            out[key] = value
+    return out
+
+
+def stage1_loss(base_model, vismem_model, inputs: Dict[str, Any], target_text, mem_type: str = "short"):
 
     tokenizer = vismem_model.tokenizer
     device = vismem_model.device
 
     # Encode target
-    tgt_ids = tokenizer(target_text, return_tensors="pt").input_ids.to(device)
+    targets = _as_list(target_text)
+    tgt = tokenizer(targets, return_tensors="pt", padding=True, add_special_tokens=False)
+    tgt_ids = tgt.input_ids.to(device)
+    tgt_mask = tgt.attention_mask.to(device)
 
     with torch.no_grad():
         full_ids = torch.cat([inputs["input_ids"], tgt_ids], dim=1)
-        attn = torch.ones_like(full_ids, dtype=torch.long)
+        prompt_mask = inputs.get("attention_mask", torch.ones_like(inputs["input_ids"], dtype=torch.long))
+        attn = torch.cat([prompt_mask, tgt_mask], dim=1)
         labels = full_ids.clone()
         labels[:, :inputs["input_ids"].size(1)] = -100
-        out = base_model(input_ids=full_ids, attention_mask=attn)
+        labels[:, inputs["input_ids"].size(1):] = labels[:, inputs["input_ids"].size(1):].masked_fill(tgt_mask == 0, -100)
+        out = base_model(**_copy_multimodal_inputs(inputs, full_ids, attn))
         logits = out.logits[:, :-1, :]
         loss_base = F.cross_entropy(logits.reshape(-1, logits.size(-1)), labels[:, 1:].reshape(-1), ignore_index=-100)
 
@@ -24,15 +43,21 @@ def stage1_loss(base_model, vismem_model, inputs: Dict[str, Any], target_text: s
     hidden = base_out.hidden_states[-1]  # (B,T,D)
     # Build H
     H = hidden
-    M = vismem_model.form_memory(H, mem_type="short")  # or "long" / both, configurable
+    M = vismem_model.form_memory(H, mem_type=mem_type)
 
     # Feed
-    emb = base_model.get_input_embeddings()(inputs["input_ids"])
+    if getattr(base_out, "hidden_states", None) is not None and len(base_out.hidden_states) > 0:
+        emb = base_out.hidden_states[0].detach()
+    else:
+        emb = base_model.get_input_embeddings()(inputs["input_ids"]).detach()
     inp_embeds = torch.cat([emb, M, base_model.get_input_embeddings()(tgt_ids)], dim=1)
-    attn2 = torch.ones(inp_embeds.size()[:-1], device=device, dtype=torch.long)
+    prompt_mask = inputs.get("attention_mask", torch.ones_like(inputs["input_ids"], dtype=torch.long))
+    mem_mask = torch.ones((inputs["input_ids"].size(0), M.size(1)), device=device, dtype=torch.long)
+    attn2 = torch.cat([prompt_mask, mem_mask, tgt_mask], dim=1)
 
     labels2 = torch.cat([inputs["input_ids"], torch.full((inputs["input_ids"].size(0), M.size(1)), -100, device=device, dtype=torch.long), tgt_ids], dim=1)
     labels2[:, :inputs["input_ids"].size(1) + M.size(1)] = -100
+    labels2[:, inputs["input_ids"].size(1) + M.size(1):] = labels2[:, inputs["input_ids"].size(1) + M.size(1):].masked_fill(tgt_mask == 0, -100)
 
     out2 = base_model(inputs_embeds=inp_embeds, attention_mask=attn2)
     logits2 = out2.logits[:, :-1, :]
