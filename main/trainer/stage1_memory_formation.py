@@ -3,18 +3,12 @@ from typing import Dict, Any, Optional, List
 import torch
 import torch.nn.functional as F
 
+from main.utils.qwen_vl import extend_qwen_vl_inputs
+
 def _as_list(target_text):
     if isinstance(target_text, str):
         return [target_text]
     return list(target_text)
-
-
-def _copy_multimodal_inputs(inputs: Dict[str, Any], input_ids, attention_mask):
-    out = {"input_ids": input_ids, "attention_mask": attention_mask}
-    for key, value in inputs.items():
-        if key not in ("input_ids", "attention_mask"):
-            out[key] = value
-    return out
 
 
 def stage1_loss(base_model, vismem_model, inputs: Dict[str, Any], target_text, mem_type: str = "short"):
@@ -35,7 +29,7 @@ def stage1_loss(base_model, vismem_model, inputs: Dict[str, Any], target_text, m
         labels = full_ids.clone()
         labels[:, :inputs["input_ids"].size(1)] = -100
         labels[:, inputs["input_ids"].size(1):] = labels[:, inputs["input_ids"].size(1):].masked_fill(tgt_mask == 0, -100)
-        out = base_model(**_copy_multimodal_inputs(inputs, full_ids, attn))
+        out = base_model(**extend_qwen_vl_inputs(inputs, full_ids, attn))
         logits = out.logits[:, :-1, :]
         loss_base = F.cross_entropy(logits.reshape(-1, logits.size(-1)), labels[:, 1:].reshape(-1), ignore_index=-100)
 

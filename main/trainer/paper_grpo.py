@@ -8,7 +8,7 @@ import torch
 from main.trainer.rewards import exact_match_reward
 from main.trainer.stage2_invocation import compute_penalties
 from main.utils.distributed import move_to_device
-from main.utils.qwen_vl import prepare_qwen_vl_inputs
+from main.utils.qwen_vl import extend_qwen_vl_inputs, prepare_qwen_vl_inputs
 
 
 def group_advantages(scores: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
@@ -85,10 +85,7 @@ def _sampled_ref_kl(vismem_model, ref_model, prompt: str, image: Any, ids: torch
         ref_input_ids = torch.cat([ref_inputs["input_ids"], ids.to(vismem_model.device)], dim=1)
         generated_attn = torch.ones_like(ids, device=vismem_model.device, dtype=ref_inputs["attention_mask"].dtype)
         ref_attn = torch.cat([ref_inputs["attention_mask"], generated_attn], dim=1)
-        model_inputs = {"input_ids": ref_input_ids, "attention_mask": ref_attn}
-        for key, value in ref_inputs.items():
-            if key not in ("input_ids", "attention_mask"):
-                model_inputs[key] = value
+        model_inputs = extend_qwen_vl_inputs(ref_inputs, ref_input_ids, ref_attn)
         out = ref_model(**model_inputs)
         labels = ref_input_ids.clone()
         labels[:, : ref_inputs["input_ids"].size(1)] = -100

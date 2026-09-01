@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from main.utils.qwen_vl import extend_qwen_vl_inputs
+
 @dataclass
 class GRPOBatch:
     input_ids: torch.LongTensor          # (B, T)
@@ -30,14 +32,6 @@ def kl_divergence(logits_p: torch.Tensor, logits_q: torch.Tensor) -> torch.Tenso
     kl = (p_prob * (p - q)).sum(dim=-1)  # (B,T)
     return kl.mean(dim=-1)
 
-def _copy_multimodal_inputs(inputs: Dict[str, Any], input_ids, attention_mask):
-    out = {"input_ids": input_ids, "attention_mask": attention_mask}
-    for key, value in inputs.items():
-        if key not in ("input_ids", "attention_mask"):
-            out[key] = value
-    return out
-
-
 def grpo_loss_from_samples(model, prompts_inputs: Dict[str, Any], sampled_ids: torch.LongTensor, rewards: torch.Tensor,
                            ref_model=None, kl_beta: float = 0.02, sampled_attention_mask: Optional[torch.LongTensor] = None):
     # Build full input: prompt + sampled
@@ -50,7 +44,7 @@ def grpo_loss_from_samples(model, prompts_inputs: Dict[str, Any], sampled_ids: t
     labels[:, :prompts_inputs["input_ids"].size(1)] = -100
     labels[:, prompts_inputs["input_ids"].size(1):] = labels[:, prompts_inputs["input_ids"].size(1):].masked_fill(sampled_attention_mask == 0, -100)
 
-    out = model.base_model(**_copy_multimodal_inputs(prompts_inputs, input_ids, attn), output_hidden_states=False)
+    out = model.base_model(**extend_qwen_vl_inputs(prompts_inputs, input_ids, attn), output_hidden_states=False)
     logits = out.logits
     logp = sequence_logprobs(logits[:, :-1, :], labels[:, 1:])
 
@@ -68,7 +62,7 @@ def grpo_loss_from_samples(model, prompts_inputs: Dict[str, Any], sampled_ids: t
         return pg_loss
 
     with torch.no_grad():
-        ref_out = ref_model(**_copy_multimodal_inputs(prompts_inputs, input_ids, attn))
+        ref_out = ref_model(**extend_qwen_vl_inputs(prompts_inputs, input_ids, attn))
     kl = kl_divergence(logits[:, :-1, :], ref_out.logits[:, :-1, :])
     return pg_loss + kl_beta * kl.mean()
 

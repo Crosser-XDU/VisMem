@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from main.constants import ALL_SPECIAL_TOKENS
 import torch
 
@@ -114,6 +114,30 @@ def load_qwen_vl(
 def load_qwen25vl(*args, **kwargs):
     """Backward-compatible alias; new code should use :func:`load_qwen_vl`."""
     return load_qwen_vl(*args, **kwargs)
+
+
+def extend_qwen_vl_inputs(
+    inputs: Dict[str, Any], input_ids: torch.Tensor, attention_mask: torch.Tensor
+) -> Dict[str, Any]:
+    """Extend prompt-shaped processor fields when target/generated tokens are appended."""
+    out = {"input_ids": input_ids, "attention_mask": attention_mask}
+    prompt_len = inputs["input_ids"].size(1)
+    full_len = input_ids.size(1)
+    if full_len < prompt_len:
+        raise ValueError(f"Full input length {full_len} is shorter than prompt length {prompt_len}.")
+    for key, value in inputs.items():
+        if key in ("input_ids", "attention_mask"):
+            continue
+        if (
+            key == "mm_token_type_ids"
+            and torch.is_tensor(value)
+            and value.dim() == 2
+            and value.size(1) == prompt_len
+        ):
+            pad = value.new_zeros((value.size(0), full_len - prompt_len))
+            value = torch.cat([value, pad], dim=1)
+        out[key] = value
+    return out
 
 
 def _has_image_token(prompt: str) -> bool:
