@@ -219,7 +219,7 @@ class VisMemModel(nn.Module):
         hidden_last = out.hidden_states[-1]
         input_ids = inputs.get("input_ids", None)
         if input_ids is None:
-            raise ValueError("Processor did not return input_ids; check your Qwen2.5-VL processor.")
+            raise ValueError("Processor did not return input_ids; check your Qwen-VL processor.")
         visual_mask = self._select_visual_positions(input_ids)
         if visual_mask.any():
             visual_states = self._gather_padded(hidden_last, visual_mask)

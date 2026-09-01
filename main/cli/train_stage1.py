@@ -9,12 +9,12 @@ from torch.utils.data import DataLoader
 
 from main.utils.logging import get_logger
 from main.utils.misc import set_seed, to_torch_dtype, ensure_dir
-from main.utils.qwen_vl import load_qwen25vl, prepare_qwen_vl_inputs
+from main.utils.qwen_vl import load_qwen_vl, prepare_qwen_vl_inputs
 from main.utils.distributed import build_accelerator, resolve_device_map, move_to_device
 from main.model.model import VisMemModel
 from main.data.jsonl_dataset import JsonlVLDataset
 from main.data.collate import collate_samples
-from main.cli.common import load_yaml, build_vismem_config
+from main.cli.common import apply_model_overrides, load_yaml, build_vismem_config
 from main.trainer.paper_grpo import sample_paper_stage1_rollout
 
 logger = get_logger("main.train_stage1")
@@ -33,8 +33,7 @@ def main():
     args = ap.parse_args()
 
     cfg_dict = load_yaml(args.config)
-    if args.model_name_or_path is not None:
-        cfg_dict["model"]["model_name_or_path"] = args.model_name_or_path
+    apply_model_overrides(cfg_dict, args.model_name_or_path)
     viscfg = build_vismem_config(cfg_dict)
 
     train_cfg = cfg_dict.get("training", {})
@@ -47,8 +46,15 @@ def main():
     dtype = to_torch_dtype(cfg_dict["model"].get("torch_dtype","bfloat16"))
     device_map = resolve_device_map(cfg_dict["model"].get("device_map","auto"), accelerator)
     trust = bool(cfg_dict["model"].get("trust_remote_code", True))
+    local_files_only = bool(cfg_dict["model"].get("local_files_only", False))
 
-    base_model, tokenizer, processor = load_qwen25vl(model_name, torch_dtype=dtype, device_map=device_map, trust_remote_code=trust)
+    base_model, tokenizer, processor = load_qwen_vl(
+        model_name,
+        torch_dtype=dtype,
+        device_map=device_map,
+        trust_remote_code=trust,
+        local_files_only=local_files_only,
+    )
     paper_aligned = bool(train_cfg.get("paper_aligned", False))
     ref_model = None
     if paper_aligned:

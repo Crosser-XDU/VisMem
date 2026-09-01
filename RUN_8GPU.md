@@ -16,6 +16,30 @@ If your Transformers build cannot load `Qwen/Qwen2.5-VL-7B-Instruct`, upgrade Tr
 pip install -U "transformers>=4.49.0" accelerate peft
 ```
 
+### Local Qwen3-VL-8B
+
+Qwen3-VL requires Transformers 4.57.0 or newer. This repository includes
+`configs/vismem_qwen3vl8b.yaml`, which points at the local server copy and
+enables `local_files_only`:
+
+```bash
+pip install -U "transformers>=4.57.0" accelerate peft
+
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+VISMEM_MODEL_NAME_OR_PATH=/mnt/llmshared-ssd-hd/wangruitao/Models/Qwen/Qwen3-VL-8B-Instruct \
+VISMEM_LOCAL_FILES_ONLY=1 \
+HF_HUB_OFFLINE=1 \
+TRANSFORMERS_OFFLINE=1 \
+accelerate launch --num_processes 8 -m main.cli.train_stage1 \
+  --config configs/vismem_qwen3vl8b.yaml \
+  --train_jsonl /path/to/train.jsonl \
+  --output_dir outputs/qwen3vl8b_stage1 \
+  --epochs 1
+```
+
+`VISMEM_MODEL_NAME_OR_PATH` overrides the model path in any selected config.
+This is useful for wrapper scripts that still select a Qwen2.5-VL config.
+
 ## Data
 
 The JSONL loader expects one sample per line:

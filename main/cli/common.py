@@ -1,10 +1,24 @@
 from __future__ import annotations
 import argparse
+import os
 import yaml
 from dataclasses import dataclass
 from typing import Any, Dict
 
 from main.model.configuration_vismem import VisMemConfig, QueryBuilderConfig, LoRAConfig
+
+
+def apply_model_overrides(cfg_dict: Dict[str, Any], cli_model_name_or_path: str | None = None) -> None:
+    """Apply CLI/environment model overrides in one place for every entrypoint."""
+    model_name_or_path = cli_model_name_or_path or os.environ.get("VISMEM_MODEL_NAME_OR_PATH")
+    if model_name_or_path:
+        cfg_dict["model"]["model_name_or_path"] = model_name_or_path
+
+    local_only = os.environ.get("VISMEM_LOCAL_FILES_ONLY")
+    if local_only is not None:
+        cfg_dict["model"]["local_files_only"] = local_only.strip().lower() in {
+            "1", "true", "yes", "on"
+        }
 
 def load_yaml(path: str) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:

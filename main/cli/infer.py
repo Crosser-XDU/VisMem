@@ -5,9 +5,9 @@ import torch
 
 from main.utils.logging import get_logger
 from main.utils.misc import to_torch_dtype
-from main.utils.qwen_vl import load_qwen25vl
+from main.utils.qwen_vl import load_qwen_vl
 from main.model.model import VisMemModel
-from main.cli.common import load_yaml, build_vismem_config
+from main.cli.common import apply_model_overrides, load_yaml, build_vismem_config
 
 logger = get_logger("main.infer")
 
@@ -25,16 +25,22 @@ def main():
     args = ap.parse_args()
 
     cfg_dict = load_yaml(args.config)
-    if args.model_name_or_path is not None:
-        cfg_dict["model"]["model_name_or_path"] = args.model_name_or_path
+    apply_model_overrides(cfg_dict, args.model_name_or_path)
 
     viscfg = build_vismem_config(cfg_dict)
     model_name = cfg_dict["model"]["model_name_or_path"]
     dtype = to_torch_dtype(cfg_dict["model"].get("torch_dtype","bfloat16"))
     device_map = cfg_dict["model"].get("device_map","auto")
     trust = bool(cfg_dict["model"].get("trust_remote_code", True))
+    local_files_only = bool(cfg_dict["model"].get("local_files_only", False))
 
-    base_model, tokenizer, processor = load_qwen25vl(model_name, torch_dtype=dtype, device_map=device_map, trust_remote_code=trust)
+    base_model, tokenizer, processor = load_qwen_vl(
+        model_name,
+        torch_dtype=dtype,
+        device_map=device_map,
+        trust_remote_code=trust,
+        local_files_only=local_files_only,
+    )
     vismem = VisMemModel(base_model, tokenizer, processor, viscfg)
     if args.ckpt is not None:
         import os
